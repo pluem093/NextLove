@@ -1,5 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
-import mysql.connector, os, uuid
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import os, uuid
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 
@@ -12,7 +14,7 @@ ALLOWED = {"jpg","jpeg","png","webp"}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def db():
-    return mysql.connector.connect(
+    return psycopg2.connect(os.getenv("DATABASE_URL"))(
         host=os.getenv("DB_HOST", "127.0.0.1"),
         port=int(os.getenv("DB_PORT", "3306")),
         user=os.getenv("DB_USER", "root"),
@@ -25,7 +27,7 @@ def allowed_file(name):
 
 @app.route("/")
 def index():
-    c=db(); cur=c.cursor(dictionary=True)
+    c=db(); cur=c.cursor(cursor_factory=RealDictCursor)
     cur.execute("""SELECT p.*,u.name seller FROM products p JOIN users u ON p.seller_id=u.id
                    WHERE p.status='available' AND p.quantity > 0 ORDER BY p.created_at DESC""")
     products=cur.fetchall(); cur.close(); c.close()
@@ -39,7 +41,7 @@ def register():
             cur.execute("INSERT INTO users(name,email,password) VALUES(%s,%s,%s)",
                         (request.form["name"],request.form["email"],request.form["password"]))
             c.commit(); flash("สมัครสมาชิกสำเร็จ","success"); return redirect(url_for("login"))
-        except mysql.connector.Error:
+        except psycopg2.Error:
             flash("อีเมลนี้ถูกใช้แล้ว","danger")
         finally: cur.close(); c.close()
     return render_template("register.html")
@@ -181,7 +183,7 @@ def checkout_cart():
             for p,qty,subtotal in items:
                 cur2.execute("INSERT INTO orders(buyer_id,seller_id,product_id,quantity,total,payment_method,shipping_method) VALUES(%s,%s,%s,%s,%s,%s,%s)",
                     (session["user_id"],p["seller_id"],p["id"],qty,subtotal,payment,shipping))
-                cur2.execute("UPDATE products SET quantity=quantity-%s, status=IF(quantity-%s<=0,'sold','available') WHERE id=%s AND quantity>=%s AND status='available'", (qty,qty,p["id"],qty))
+                cur2.execute("UPDATE products SET quantity=quantity-%s, status=CASE WHEN quantity-%s<=0 THEN 'sold' ELSE 'available' END WHERE id=%s AND quantity>=%s AND status='available'", (qty,qty,p["id"],qty))
                 if cur2.rowcount != 1: raise ValueError("สินค้าเปลี่ยนสถานะระหว่างสั่งซื้อ")
             c.commit(); cur2.close(); c.close(); session["cart"]={}
             flash("สร้างคำสั่งซื้อจากตะกร้าเรียบร้อยแล้ว 🛒","success"); return redirect(url_for("orders"))
