@@ -14,13 +14,7 @@ ALLOWED = {"jpg","jpeg","png","webp"}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def db():
-    return psycopg2.connect(os.getenv("DATABASE_URL"))(
-        host=os.getenv("DB_HOST", "127.0.0.1"),
-        port=int(os.getenv("DB_PORT", "3306")),
-        user=os.getenv("DB_USER", "root"),
-        password=os.getenv("DB_PASSWORD", ""),
-        database=os.getenv("DB_NAME", "nextlove"),
-    )
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
 
 def allowed_file(name):
     return "." in name and name.rsplit(".",1)[1].lower() in ALLOWED
@@ -49,7 +43,7 @@ def register():
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method=="POST":
-        c=db(); cur=c.cursor(dictionary=True)
+        c=db(); cur=c.cursor(cursor_factory=RealDictCursor)
         cur.execute("SELECT * FROM users WHERE email=%s AND password=%s",
                     (request.form["email"],request.form["password"]))
         u=cur.fetchone(); cur.close(); c.close()
@@ -85,7 +79,7 @@ def sell():
 
 @app.route("/product/<int:pid>")
 def product(pid):
-    c=db(); cur=c.cursor(dictionary=True)
+    c=db(); cur=c.cursor(cursor_factory=RealDictCursor)
     cur.execute("""SELECT p.*,u.name seller FROM products p JOIN users u ON p.seller_id=u.id WHERE p.id=%s""",(pid,))
     p=cur.fetchone(); cur.close(); c.close()
     if not p: return "ไม่พบสินค้า",404
@@ -98,7 +92,7 @@ def cart():
     cart_data={int(k): max(1,int(v)) for k,v in raw.items()}
     if not cart_data:
         return render_template("cart.html", items=[], grand_total=0, cart_count=0)
-    c=db(); cur=c.cursor(dictionary=True)
+    c=db(); cur=c.cursor(cursor_factory=RealDictCursor)
     ids=list(cart_data.keys())
     placeholders=",".join(["%s"]*len(ids))
     cur.execute(f"SELECT p.*,u.name seller FROM products p JOIN users u ON p.seller_id=u.id WHERE p.id IN ({placeholders}) AND p.status='available'", ids)
@@ -121,7 +115,7 @@ def cart():
 @app.route("/cart/add/<int:pid>", methods=["POST","GET"])
 def cart_add(pid):
     if "user_id" not in session: return redirect(url_for("login"))
-    c=db(); cur=c.cursor(dictionary=True)
+    c=db(); cur=c.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM products WHERE id=%s AND status='available'", (pid,))
     p=cur.fetchone(); cur.close(); c.close()
     if not p: flash("สินค้านี้ไม่มีแล้ว","danger"); return redirect(url_for("index"))
@@ -140,7 +134,7 @@ def cart_update(pid):
     key=str(pid)
     if qty==0: cart.pop(key,None)
     else:
-        c=db(); cur=c.cursor(dictionary=True); cur.execute("SELECT quantity,status FROM products WHERE id=%s",(pid,)); p=cur.fetchone(); cur.close(); c.close()
+        c=db(); cur=c.cursor(cursor_factory=RealDictCursor); cur.execute("SELECT quantity,status FROM products WHERE id=%s",(pid,)); p=cur.fetchone(); cur.close(); c.close()
         if not p or p["status"] != "available": cart.pop(key,None)
         else: cart[key]=min(qty,int(p["quantity"]))
     session["cart"]=cart
@@ -164,7 +158,7 @@ def checkout_cart():
     cart_data={int(k): max(1,int(v)) for k,v in raw.items()}
     if not cart_data:
         flash("ตะกร้าสินค้าว่าง","danger"); return redirect(url_for("cart"))
-    c=db(); cur=c.cursor(dictionary=True)
+    c=db(); cur=c.cursor(cursor_factory=RealDictCursor)
     ids=list(cart_data.keys()); placeholders=",".join(["%s"]*len(ids))
     cur.execute(f"SELECT * FROM products WHERE id IN ({placeholders}) AND status='available'", ids)
     products=cur.fetchall(); cur.close()
@@ -201,7 +195,7 @@ def checkout_legacy(pid):
 @app.route("/orders")
 def orders():
     if "user_id" not in session: return redirect(url_for("login"))
-    c=db(); cur=c.cursor(dictionary=True)
+    c=db(); cur=c.cursor(cursor_factory=RealDictCursor)
     cur.execute("""SELECT o.*,p.name product_name,p.image FROM orders o JOIN products p ON o.product_id=p.id
                    WHERE o.buyer_id=%s OR o.seller_id=%s ORDER BY o.created_at DESC""",
                 (session["user_id"],session["user_id"]))
@@ -227,7 +221,7 @@ def complaint():
 @app.route("/profile")
 def profile():
     if "user_id" not in session: return redirect(url_for("login"))
-    c=db(); cur=c.cursor(dictionary=True)
+    c=db(); cur=c.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM products WHERE seller_id=%s ORDER BY created_at DESC",(session["user_id"],))
     products=cur.fetchall()
     cur.execute("""SELECT COALESCE(SUM(total),0) gross,COALESCE(SUM(total*0.15),0) fee,
