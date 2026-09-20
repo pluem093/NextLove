@@ -1,0 +1,3 @@
+USE nextlove;
+ALTER TABLE products ADD COLUMN quantity INT NOT NULL DEFAULT 1 AFTER status;
+ALTER TABLE orders ADD COLUMN quantity INT NOT NULL DEFAULT 1 AFTER product_id;
